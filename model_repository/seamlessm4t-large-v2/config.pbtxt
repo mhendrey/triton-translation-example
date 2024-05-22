@@ -1,0 +1,19 @@
+name: "seamlessm4t-large-v2"
+backend: "python"
+
+input [
+  {
+    name: "INPUT"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+output [
+  {
+    name": "OUTPUT"
+    date_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+instance_group [{ kind: KIND_GPU }]
