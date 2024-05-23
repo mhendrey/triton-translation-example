@@ -16,4 +16,9 @@ output [
   }
 ]
 
+parameters: {
+  key: "EXECUTION_ENV_PATH",
+  value: {string_value: "$$TRITON_MODEL_DIRECTORY/seamlessm4t-large-v2.tar.gz"}
+}
+
 instance_group [{ kind: KIND_GPU }]

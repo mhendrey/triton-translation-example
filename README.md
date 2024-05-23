@@ -1,6 +1,12 @@
 # triton-translation-example
 Exploring how to utilize NVIDIA's Triton Inference Server for hosting machine translation workflow.
 
+### Pulling Triton Inference Server Container
+Let's use the latest version of the docker container that has the Python & PyTorch backends
+`$ docker pull nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3`
+Not exactly sure if I need to add pytorch to the conda env or if this is already available. Guessing
+time will tell.
+
 ## Creating Your Own Conda Environment
 Taking directly from the [NVIDIA documentation](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/python_backend/README.html?highlight=conda#creating-custom-execution-environments).
 This highlights the importance of setting `export PYTHONNOUSERSITE=True` before calling
@@ -23,3 +29,4 @@ Within the model_repository/fasttext-language-identification directory do the fo
 $ conda env create -f environment.yml
 $ conda-pack -n fasttext-language-identification -o fasttext-language-identification.tar.gz
 ```
+
