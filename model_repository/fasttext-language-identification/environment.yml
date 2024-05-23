@@ -1,0 +1,7 @@
+name: fasttext-language-identification
+channels:
+    - conda-forge
+    - defaults
+dependencies:
+    - python==3.10.0
+    - fasttext
