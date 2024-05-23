@@ -24,7 +24,7 @@ class TritonPythonModel:
         model_path = hf_hub_download(
             repo_id="facebook/fasttext-language-identification"
         )
-        self.model = fasttext.load(model_path)
+        self.model = fasttext.load_model(model_path)
         self.REMOVE_NEWLINE = re.compile(r"\n")
 
     def execute(

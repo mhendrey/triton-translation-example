@@ -15,6 +15,11 @@ Input will be Python strings. FastText requires that newlines be stripped, but t
 will be handled internally.
 
 ### Output
-Returns the language id, taken from [Wikipedia's list of Wikipedias](https://en.wikipedia.org/wiki/List_of_Wikipedias) which appears to be the conventiont that FastText adopted.
+Returns the language id, taken from [Wikipedia's list of Wikipedias](https://en.wikipedia.org/wiki/List_of_Wikipedias) which appears to be the convention that [FastText adopted](https://github.com/facebookresearch/fastText/issues/1305#issuecomment-1586349534).
 
-### 
+### Conda Environment
+Within the model_repository/fasttext-language-identification directory do the following
+```
+$ conda env create -f environment.yml
+$ conda-pack -n fasttext-language-identification -o fasttext-language-identification.tar.gz
+```
