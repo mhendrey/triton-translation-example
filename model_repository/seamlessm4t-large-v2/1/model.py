@@ -1,7 +1,8 @@
 import json
 import numpy as np
 
-# from transformers import SeamlessM4TForTextToText
+import torch
+from transformers import AutoProcessor, SeamlessM4Tv2ForTextToText
 from typing import List
 
 import triton_python_backend_utils as pb_utils
@@ -19,17 +20,18 @@ class TritonPythonModel:
         # Convert Triton types to numpy types
         self.output_dtype = pb_utils.triton_string_to_numpy(output_config["data_type"])
 
-        # self.model = SeamlessM4TForTextToText.from_pretrained("", auto_map=True)
-        # DEGUB - Returns input
-        self.model = lambda x: x
-        """
         self.model = SeamlessM4Tv2ForTextToText.from_pretrained(
-                "facebook/seamless-m4t-v2-large",
-                device_map="auto",
-                torch_dtype=torch.float16,
-                cache_dir="/hub")
-        self.processor = AutoProcessor.from_pretrained("facebook/seamless-m4t-v2-large")
-        """
+            "facebook/seamless-m4t-v2-large",
+            device_map="auto",
+            torch_dtype=torch.float16,
+            cache_dir="/hub",
+            local_files_only=True,
+        )
+        self.processor = AutoProcessor.from_pretrained(
+            "facebook/seamless-m4t-v2-large",
+            cache_dir="/hub",
+            local_files_only=True,
+        )
 
     def execute(
         self, requests: List[pb_utils.InferenceRequest]
@@ -49,7 +51,6 @@ class TritonPythonModel:
         output_dtype = self.output_dtype
 
         # Create a batch to give to the model
-        # Likely not needed here, but certainly want it when on a GPU
         batch = []
         for request in requests:
             # Get INPUT
@@ -59,11 +60,11 @@ class TritonPythonModel:
             batch.append(input_str)
 
         # Batch inference
-        """
         text_inputs = self.processor(
             text=batch,
-            src_lang="need_this_input", # Seems to need to be all the same language
-            return_tensors="pt").to(self.device)
+            src_lang="need_this_input",  # Seems to need to be all the same language
+            return_tensors="pt",
+        ).to(self.device)
         output_tokens = self.model.generate(
             **text_inputs,
             tgt_lang="en",
@@ -72,10 +73,7 @@ class TritonPythonModel:
             max_new_tokens=3000,
             no_repeat_ngram_size=3,
         )
-        output_text = self.processor.batch_decode(output_tokens, skip_special_tokens=True)
-        """
-        # outputs = self.model.generate(inputs)
-        outputs = batch
+        outputs = self.processor.batch_decode(output_tokens, skip_special_tokens=True)
 
         responses = []
         for output, request in zip(outputs, requests):
