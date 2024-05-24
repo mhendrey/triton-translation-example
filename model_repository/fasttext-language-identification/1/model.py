@@ -22,7 +22,8 @@ class TritonPythonModel:
 
         """Load the model into CPU RAM"""
         model_path = hf_hub_download(
-            repo_id="facebook/fasttext-language-identification"
+            repo_id="facebook/fasttext-language-identification",
+            filename="model.bin",
         )
         self.model = fasttext.load_model(model_path)
         self.REMOVE_NEWLINE = re.compile(r"\n")

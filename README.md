@@ -4,13 +4,25 @@ Exploring how to utilize NVIDIA's Triton Inference Server for hosting machine tr
 ### Pulling Triton Inference Server Container
 Let's use the latest version of the docker container that has the Python & PyTorch backends
 `$ docker pull nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3`
-Not exactly sure if I need to add pytorch to the conda env or if this is already available. Guessing
-time will tell.
 
 ## Creating Your Own Conda Environment
 Taking directly from the [NVIDIA documentation](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/python_backend/README.html?highlight=conda#creating-custom-execution-environments).
 This highlights the importance of setting `export PYTHONNOUSERSITE=True` before calling
-conda-pack
+conda-pack. In addition, the docs mention that the python version in the conda-pack
+must match the python version in the container.  You can check this by first pulling
+down the container of interest and then going into the container to check python
+```
+$ docker pull nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3
+$ docker run -it nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 /bin/bash
+container:/opt/tritonserver# /usr/bin/python3 -V
+container:/opt/tritonserver# exit
+```
+
+To create the conda pack needed for an environment:
+```
+$ conda env create -f environment.yml
+$ conda pack -n <environment_name>
+```
 
 ## Fasttext-Language-Identification
 The first step in the process be a language identification model. For this workflow,

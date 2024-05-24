@@ -26,7 +26,8 @@ class TritonPythonModel:
         self.model = SeamlessM4Tv2ForTextToText.from_pretrained(
                 "facebook/seamless-m4t-v2-large",
                 device_map="auto",
-                torch_dtype=torch.float16)
+                torch_dtype=torch.float16,
+                cache_dir="/hub")
         self.processor = AutoProcessor.from_pretrained("facebook/seamless-m4t-v2-large")
         """
 
