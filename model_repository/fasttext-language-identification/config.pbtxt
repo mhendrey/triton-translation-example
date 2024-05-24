@@ -10,8 +10,8 @@ input [
 ]
 output [
   {
-    name": "OUTPUT"
-    date_type: TYPE_STRING
+    name: "OUTPUT"
+    data_type: TYPE_STRING
     dims: [ 1 ]
   }
 ]

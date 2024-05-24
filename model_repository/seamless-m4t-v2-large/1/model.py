@@ -33,9 +33,7 @@ class TritonPythonModel:
             local_files_only=True,
         )
 
-    def execute(
-        self, requests: List[pb_utils.InferenceRequest]
-    ) -> List[pb_utils.InferenceResponse]:
+    def execute(self, requests: List) -> List:
         """_summary_
 
         Parameters

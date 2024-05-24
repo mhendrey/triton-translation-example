@@ -1,4 +1,4 @@
-name: "seamlessm4t-large-v2"
+name: "seamless-m4t-large-v2"
 backend: "python"
 
 input [
@@ -15,8 +15,8 @@ input [
 ]
 output [
   {
-    name": "OUTPUT"
-    date_type: TYPE_STRING
+    name: "OUTPUT"
+    data_type: TYPE_STRING
     dims: [1]
   }
 ]

@@ -30,9 +30,7 @@ class TritonPythonModel:
         self.model = fasttext.load_model(model_path)
         self.REMOVE_NEWLINE = re.compile(r"\n")
 
-    def execute(
-        self, requests: List[pb_utils.InferenceRequest]
-    ) -> List[pb_utils.InferenceResponse]:
+    def execute(self, requests: List) -> List:
         """_summary_
 
         Parameters
