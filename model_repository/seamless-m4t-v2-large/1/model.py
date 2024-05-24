@@ -51,22 +51,27 @@ class TritonPythonModel:
         output_dtype = self.output_dtype
 
         # Create a batch to give to the model
-        batch = []
+        input_texts = []
+        src_langs = []
         for request in requests:
             # Get INPUT
-            input = pb_utils.get_input_tensor_by_name(request, "INPUT")
+            input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
             # Convert TritonTensor -> numpy -> python list for fasttext
-            input_str = input.as_numpy().tolist()[0]
-            batch.append(input_str)
+            input_text = input_text.as_numpy().tolist()[0]
+            input_texts.append(input_text)
+            src_lang = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
+            src_lang = src_lang.as_numpy().tolist()[0]
+            src_langs.append(input_text)
 
         # Batch inference
-        text_inputs = self.processor(
-            text=batch,
-            src_lang="need_this_input",  # Seems to need to be all the same language
+        inputs_ids = self.processor(
+            text=input_texts,
+            src_lang=src_langs[0],  # For now need to use all the same input language
+            tgt_lang="en",
             return_tensors="pt",
         ).to(self.device)
         output_tokens = self.model.generate(
-            **text_inputs,
+            **inputs_ids,
             tgt_lang="en",
             num_beams=5,
             num_return_sequences=1,
@@ -76,16 +81,13 @@ class TritonPythonModel:
         outputs = self.processor.batch_decode(output_tokens, skip_special_tokens=True)
 
         responses = []
-        for output, request in zip(outputs, requests):
+        for output in outputs:
             output = pb_utils.Tensor(
                 "OUTPUT",
                 np.array([output], dtype=output_dtype),
             )
             inference_response = pb_utils.InferenceResponse(
                 output_tensors=[output],
-                # id=request.request_id(), # Not sure you should do this
-                # Found in https://github.com/triton-inference-server/server/issues/6181
-                # Maybe it is just RequestID() which is the function in infer_request.cc
             )
             responses.append(inference_response)
 
