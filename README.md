@@ -47,26 +47,6 @@ $ conda env create -f environment.yml
 $ conda-pack -n fasttext-language-identification
 ```
 
-### Example Request
-```
-import json, requests
-inference_request_fasttext = {
-    "id": "abc",
-    "inputs": [
-        {
-            "name": "INPUT_TEXT",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["Hoy es mi cumpleaños."],
-        },
-    ],
-}
-result = requests.post(
-    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
-    json=inference_request_fasttext,
-)
-print(result.json())
-```
 
 ## Seamless-M4T-v2-Large
 Once we know the source language from fasttext, we will tranlsate the input text from
@@ -92,7 +72,33 @@ $ conda env create -f environment.yml
 $ conda-pack -n seamless-m4t-v2-large
 ```
 
-### Example Request
+## Launch Triton Inference Server
+```
+docker run --gpus=1 --rm --net=host -v ${PWD}/model_repository:/models -v /home/matthew/.cache/huggingface/hub:/hub nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 tritonserver --model-repository=/models
+```
+
+## Example Request
+### FastText-Language-Identification Example
+```
+import json, requests
+inference_request_fasttext = {
+    "id": "abc",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1],
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        },
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
+    json=inference_request_fasttext,
+)
+print(result.json())
+```
+### SeamlessM4T Example
 ```
 import json, requests
 inference_request_seamless = {
