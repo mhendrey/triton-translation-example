@@ -32,6 +32,7 @@ class TritonPythonModel:
             cache_dir="/hub",
             local_files_only=True,
         )
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def execute(self, requests: List) -> List:
         """_summary_
@@ -55,22 +56,22 @@ class TritonPythonModel:
             # Get INPUT
             input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
             # Convert TritonTensor -> numpy -> python list for fasttext
-            input_text = input_text.as_numpy().tolist()[0]
+            input_text = input_text.as_numpy().tolist()[0].decode("utf-8")
             input_texts.append(input_text)
             src_lang = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
-            src_lang = src_lang.as_numpy().tolist()[0]
+            src_lang = src_lang.as_numpy().tolist()[0].decode("utf-8")
             src_langs.append(input_text)
 
         # Batch inference
         inputs_ids = self.processor(
             text=input_texts,
             src_lang=src_langs[0],  # For now need to use all the same input language
-            tgt_lang="en",
+            tgt_lang="eng",
             return_tensors="pt",
         ).to(self.device)
         output_tokens = self.model.generate(
             **inputs_ids,
-            tgt_lang="en",
+            tgt_lang="eng",
             num_beams=5,
             num_return_sequences=1,
             max_new_tokens=3000,

@@ -3,14 +3,14 @@ backend: "python"
 
 input [
   {
-    name: "INPUT"
+    name: "INPUT_TEXT"
     data_type: TYPE_STRING
     dims: [ 1 ]
   }
 ]
 output [
   {
-    name: "OUTPUT"
+    name: "LANG_ID"
     data_type: TYPE_STRING
     dims: [ 1 ]
   }

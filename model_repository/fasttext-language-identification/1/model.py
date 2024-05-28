@@ -14,8 +14,8 @@ class TritonPythonModel:
     def initialize(self, args):
         self.model_config = model_config = json.loads(args["model_config"])
 
-        # Get OUTPUT configuration
-        output_config = pb_utils.get_output_config_by_name(model_config, "OUTPUT")
+        # Get LANG_ID configuration
+        output_config = pb_utils.get_output_config_by_name(model_config, "LANG_ID")
 
         # Convert Triton types to numpy types
         self.output_dtype = pb_utils.triton_string_to_numpy(output_config["data_type"])
@@ -50,9 +50,11 @@ class TritonPythonModel:
         batch = []
         for request in requests:
             # Get INPUT
-            input = pb_utils.get_input_tensor_by_name(request, "INPUT")
+            input = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
             # Convert TritonTensor -> numpy -> python list for fasttext
-            input_str = input.as_numpy().tolist()[0]
+            # Eventhough config.pbtxt specifies datatype: TYPE_STRING
+            # when sending through a request it is BYTES. So it must be decoded
+            input_str = input.as_numpy().tolist()[0].decode("utf-8")
             # Replace newlines with ' '. FastText breaks on \n
             batch.append(self.REMOVE_NEWLINE.sub(" ", input_str))
 
@@ -65,14 +67,11 @@ class TritonPythonModel:
             # Take just the first one because we used k=1 in predict()
             output_label, _ = output_label[0].replace("__label__", "").split("_")
             output = pb_utils.Tensor(
-                "OUTPUT",
+                "LANG_ID",
                 np.array([output_label], dtype=output_dtype),
             )
             inference_response = pb_utils.InferenceResponse(
                 output_tensors=[output],
-                # id=request.request_id(), # Not sure you should do this
-                # Found in https://github.com/triton-inference-server/server/issues/6181
-                # Maybe it is just RequestID() which is the function in infer_request.cc
             )
             responses.append(inference_response)
 
