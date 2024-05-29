@@ -77,7 +77,7 @@ $ conda-pack -n seamless-m4t-v2-large
 docker run --gpus=1 --rm --net=host -v ${PWD}/model_repository:/models -v /home/matthew/.cache/huggingface/hub:/hub nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 tritonserver --model-repository=/models
 ```
 
-## Example Request
+## Example Requests
 ### FastText-Language-Identification Example
 ```
 import json, requests
@@ -111,7 +111,7 @@ inference_request_seamless = {
             "data": ["Hoy es mi cumpleaños."],
         },
         {
-            "name": "SRC_LANG",
+            "name": "LANG_ID",
             "shape": [1],
             "datatype": "BYTES",
             "data": ["spa"],
@@ -121,6 +121,26 @@ inference_request_seamless = {
 result = requests.post(
     url="http://localhost:8000/v2/models/seamless-m4t-v2-large/infer",
     json=inference_request_seamless,
+)
+print(result.json())
+```
+### Translate Example
+```
+import json, requests
+inference_request = {
+    "id": "abc",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1],
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        }
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/translate/infer",
+    json=inference_request,
 )
 print(result.json())
 ```
