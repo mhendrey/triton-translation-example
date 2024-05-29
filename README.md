@@ -24,6 +24,11 @@ $ conda env create -f environment.yml
 $ conda pack -n <environment_name>
 ```
 
+## Launch Triton Inference Server
+```
+docker run --gpus=1 --rm --net=host -v ${PWD}/model_repository:/models -v /home/matthew/.cache/huggingface/hub:/hub nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 tritonserver --model-repository=/models
+```
+
 ## Fasttext-Language-Identification
 The first step in the process be a language identification model. For this workflow,
 I will use the [fasttext-language-identification](https://huggingface.co/facebook/fasttext-language-identification). 
@@ -47,6 +52,26 @@ $ conda env create -f environment.yml
 $ conda-pack -n fasttext-language-identification
 ```
 
+### Example Request
+```
+import json, requests
+inference_request_fasttext = {
+    "id": "abc",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1],
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        },
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
+    json=inference_request_fasttext,
+)
+print(result.json())
+```
 
 ## Seamless-M4T-v2-Large
 Once we know the source language from fasttext, we will tranlsate the input text from
@@ -71,34 +96,7 @@ Within the model_repository/seamless-m4t-v2-large directory do the following
 $ conda env create -f environment.yml
 $ conda-pack -n seamless-m4t-v2-large
 ```
-
-## Launch Triton Inference Server
-```
-docker run --gpus=1 --rm --net=host -v ${PWD}/model_repository:/models -v /home/matthew/.cache/huggingface/hub:/hub nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 tritonserver --model-repository=/models
-```
-
-## Example Requests
-### FastText-Language-Identification Example
-```
-import json, requests
-inference_request_fasttext = {
-    "id": "abc",
-    "inputs": [
-        {
-            "name": "INPUT_TEXT",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["Hoy es mi cumpleaños."],
-        },
-    ],
-}
-result = requests.post(
-    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
-    json=inference_request_fasttext,
-)
-print(result.json())
-```
-### SeamlessM4T Example
+### Example Request
 ```
 import json, requests
 inference_request_seamless = {
@@ -124,7 +122,28 @@ result = requests.post(
 )
 print(result.json())
 ```
-### Translate Example
+
+## Translate
+This is the service level Triton deployment package that combines the language
+identification step and the translation by SeamlessM4Tv2. This leverages the
+BLS (business logic scripting) of Triton Inference Server.
+
+To start off, this is nearly a copy of the [BLS synchronized example](https://github.com/triton-inference-server/python_backend/blob/main/examples/bls/sync_model.py).
+
+### Input
+The input text has a datatype of TYPE_STRING which is a natural way for a client
+to want to send the data to the translation service. To make this work, the input
+name to this deployment package needed to match the name of the inputs to both
+the FastText-Language-Identification and the Seamless-M4T-v2-Large.
+
+### Output
+The output text is also of datatype TYPE_STRING.
+
+### Conda Environment
+Since this is a higher level of abstraction, there is no need for a conda package just
+yet. It's possible when moving to the async that a conda environment will be needed.
+
+### Example Request
 ```
 import json, requests
 inference_request = {
