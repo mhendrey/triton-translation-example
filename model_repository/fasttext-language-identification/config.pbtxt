@@ -1,5 +1,6 @@
 name: "fasttext-language-identification"
 backend: "python"
+default_model_filename: "fasttext-language-identification.py"
 
 input [
   {
