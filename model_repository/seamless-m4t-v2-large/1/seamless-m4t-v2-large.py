@@ -14,8 +14,10 @@ class TritonPythonModel:
     def initialize(self, args):
         self.model_config = model_config = json.loads(args["model_config"])
 
-        # Get OUTPUT configuration
-        output_config = pb_utils.get_output_config_by_name(model_config, "OUTPUT")
+        # Get TRANSLATED_TEXT configuration
+        output_config = pb_utils.get_output_config_by_name(
+            model_config, "TRANSLATED_TEXT"
+        )
 
         # Convert Triton types to numpy types
         self.output_dtype = pb_utils.triton_string_to_numpy(output_config["data_type"])
@@ -58,7 +60,7 @@ class TritonPythonModel:
             # Convert TritonTensor -> numpy -> python list for fasttext
             input_text = input_text.as_numpy().tolist()[0].decode("utf-8")
             input_texts.append(input_text)
-            src_lang = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
+            src_lang = pb_utils.get_input_tensor_by_name(request, "LANG_ID")
             src_lang = src_lang.as_numpy().tolist()[0].decode("utf-8")
             src_langs.append(input_text)
 
@@ -82,7 +84,7 @@ class TritonPythonModel:
         responses = []
         for output in outputs:
             output = pb_utils.Tensor(
-                "OUTPUT",
+                "TRANSLATED_TEXT",
                 np.array([output], dtype=output_dtype),
             )
             inference_response = pb_utils.InferenceResponse(

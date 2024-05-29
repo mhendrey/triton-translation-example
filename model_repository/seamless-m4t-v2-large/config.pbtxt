@@ -9,14 +9,14 @@ input [
     dims: [1]
   },
   {
-    name: "SRC_LANG",
+    name: "LANG_ID",
     data_type: TYPE_STRING
     dims: [1]
   }
 ]
 output [
   {
-    name: "OUTPUT"
+    name: "TRANSLATED_TEXT"
     data_type: TYPE_STRING
     dims: [1]
   }
