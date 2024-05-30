@@ -163,3 +163,26 @@ result = requests.post(
 )
 print(result.json())
 ```
+If you already know the lang_id, you can pass that along in the request parameters
+which will then skip running the input text through the
+fasttext-language-identification model and give the input text directly to the
+seamless-m4t-v2-large model.
+```
+inference_request_lang_id = {
+    "id": "abc",
+    "parameters": {"lang_id": "spa"},
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1],
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        }
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/translate/infer",
+    json=inference_request_lang_id,
+)
+print(result.json())
+```

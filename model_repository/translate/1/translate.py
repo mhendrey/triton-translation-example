@@ -35,7 +35,6 @@ class TritonPythonModel:
         List[pb_utils.InferenceResponse]
             _description_
         """
-        output_dtype = self.output_dtype
 
         responses = []
         # Every Python backend must iterate over everyone of the requests
@@ -44,25 +43,34 @@ class TritonPythonModel:
             # Get INPUT_TEXT
             input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
 
-            # Create inference request object
-            infer_lang_id_request = pb_utils.InferenceRequest(
-                model_name="fasttext-language-identification",
-                requested_output_names=["LANG_ID"],
-                inputs=[input_text],
-            )
+            # Get any optional parameters passed in.
+            request_params = json.loads(request.parameters())
+            lang_id_param = request_params.get("lang_id", None)
 
-            # Peform synchronous blocking inference request
-            infer_lang_id_response = infer_lang_id_request.exec()
-            if infer_lang_id_response.has_error():
-                raise pb_utils.TritonModelException(
-                    infer_lang_id_response.error().message()
+            # If the lang_id isn't passed in, then run language id model
+            if not lang_id_param:
+                # Create inference request object
+                infer_lang_id_request = pb_utils.InferenceRequest(
+                    model_name="fasttext-language-identification",
+                    requested_output_names=["LANG_ID"],
+                    inputs=[input_text],
                 )
 
-            # Get the lang_id
-            lang_id = pb_utils.get_output_tensor_by_name(
-                infer_lang_id_response, "LANG_ID"
-            )
-            # lang_id = infer_lang_id_response.output_tensors()[0]["data"][0]
+                # Peform synchronous blocking inference request
+                infer_lang_id_response = infer_lang_id_request.exec()
+                if infer_lang_id_response.has_error():
+                    raise pb_utils.TritonModelException(
+                        infer_lang_id_response.error().message()
+                    )
+
+                # Get the lang_id
+                lang_id = pb_utils.get_output_tensor_by_name(
+                    infer_lang_id_response, "LANG_ID"
+                )
+            else:
+                lang_id = pb_utils.Tensor(
+                    "LANG_ID", np.array([lang_id_param], np.object_)
+                )
 
             # Create inference request object for translation
             infer_seamless_request = pb_utils.InferenceRequest(
