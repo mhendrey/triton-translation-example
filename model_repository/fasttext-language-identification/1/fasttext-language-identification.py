@@ -14,8 +14,8 @@ class TritonPythonModel:
     def initialize(self, args):
         self.model_config = model_config = json.loads(args["model_config"])
 
-        # Get LANG_ID configuration
-        output_config = pb_utils.get_output_config_by_name(model_config, "LANG_ID")
+        # Get SRC_LANG configuration
+        output_config = pb_utils.get_output_config_by_name(model_config, "SRC_LANG")
 
         # Convert Triton types to numpy types
         self.output_dtype = pb_utils.triton_string_to_numpy(output_config["data_type"])
@@ -67,7 +67,7 @@ class TritonPythonModel:
             # Take just the first one because we used k=1 in predict()
             output_label, _ = output_label[0].replace("__label__", "").split("_")
             output = pb_utils.Tensor(
-                "LANG_ID",
+                "SRC_LANG",
                 np.array([output_label], dtype=output_dtype),
             )
             inference_response = pb_utils.InferenceResponse(

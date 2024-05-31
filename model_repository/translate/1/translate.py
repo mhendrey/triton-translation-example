@@ -45,14 +45,16 @@ class TritonPythonModel:
 
             # Get any optional parameters passed in.
             request_params = json.loads(request.parameters())
-            lang_id_param = request_params.get("lang_id", None)
+            src_lang = request_params.get("src_lang", None)
+            tgt_lang = request_params.get("tgt_lang", "eng")
+            tgt_lang = pb_utils.Tensor("TGT_LANG", np.array([tgt_lang], np.object_))
 
-            # If the lang_id isn't passed in, then run language id model
-            if not lang_id_param:
+            # If the lang_id isn't passed in, then run language id model to set it
+            if not src_lang:
                 # Create inference request object
                 infer_lang_id_request = pb_utils.InferenceRequest(
                     model_name="fasttext-language-identification",
-                    requested_output_names=["LANG_ID"],
+                    requested_output_names=["SRC_LANG"],
                     inputs=[input_text],
                 )
 
@@ -64,19 +66,17 @@ class TritonPythonModel:
                     )
 
                 # Get the lang_id
-                lang_id = pb_utils.get_output_tensor_by_name(
-                    infer_lang_id_response, "LANG_ID"
+                src_lang = pb_utils.get_output_tensor_by_name(
+                    infer_lang_id_response, "SRC_LANG"
                 )
             else:
-                lang_id = pb_utils.Tensor(
-                    "LANG_ID", np.array([lang_id_param], np.object_)
-                )
+                src_lang = pb_utils.Tensor("SRC_LANG", np.array([src_lang], np.object_))
 
             # Create inference request object for translation
             infer_seamless_request = pb_utils.InferenceRequest(
                 model_name="seamless-m4t-v2-large",
                 requested_output_names=["TRANSLATED_TEXT"],
-                inputs=[input_text, lang_id],
+                inputs=[input_text, src_lang, tgt_lang],
             )
 
             # Perform synchronous blocking inference request

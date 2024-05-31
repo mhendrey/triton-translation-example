@@ -9,7 +9,12 @@ input [
     dims: [1]
   },
   {
-    name: "LANG_ID",
+    name: "SRC_LANG",
+    data_type: TYPE_STRING
+    dims: [1]
+  },
+  {
+    name: "TGT_LANG",
     data_type: TYPE_STRING
     dims: [1]
   }

@@ -54,26 +54,32 @@ class TritonPythonModel:
         # Create a batch to give to the model
         input_texts = []
         src_langs = []
+        tgt_langs = []
         for request in requests:
             # Get INPUT
             input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
-            # Convert TritonTensor -> numpy -> python list for fasttext
+            # Convert TritonTensor -> numpy -> python list for input to SeamlessM4T
             input_text = input_text.as_numpy().tolist()[0].decode("utf-8")
             input_texts.append(input_text)
-            src_lang = pb_utils.get_input_tensor_by_name(request, "LANG_ID")
+            # Convert TritonTensor -> numpy -> btyes -> str
+            src_lang = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
             src_lang = src_lang.as_numpy().tolist()[0].decode("utf-8")
-            src_langs.append(input_text)
+            src_langs.append(src_lang)
+
+            tgt_lang = pb_utils.get_input_tensor_by_name(request, "TGT_LANG")
+            tgt_lang = tgt_lang.as_numpy().tolist()[0].decode("utf-8")
+            tgt_langs.append(tgt_lang)
 
         # Batch inference
         inputs_ids = self.processor(
             text=input_texts,
-            src_lang=src_langs[0],  # For now need to use all the same input language
-            tgt_lang="eng",
+            src_lang=src_langs[0],  # For now need to use all the same src lang
+            tgt_lang=tgt_langs[0],  # For now need to use all the same tgt lang
             return_tensors="pt",
         ).to(self.device)
         output_tokens = self.model.generate(
             **inputs_ids,
-            tgt_lang="eng",
+            tgt_lang=tgt_langs[0],
             num_beams=5,
             num_return_sequences=1,
             max_new_tokens=3000,
