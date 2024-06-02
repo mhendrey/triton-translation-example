@@ -41,13 +41,22 @@ class TritonPythonModel:
         # and create a pb_utils.InferenceResponse for each of them.
         for request in requests:
             # Get INPUT_TEXT
-            input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+            try:
+                input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        f"{exc}", pb_utils.TritonError.INVALID_ARG
+                    )
+                )
+                responses.append(response)
+                continue
 
             # Get any optional parameters passed in.
             request_params = json.loads(request.parameters())
             src_lang = request_params.get("src_lang", None)
             tgt_lang = request_params.get("tgt_lang", "eng")
-            tgt_lang = pb_utils.Tensor("TGT_LANG", np.array([tgt_lang], np.object_))
+            tgt_lang_tt = pb_utils.Tensor("TGT_LANG", np.array([tgt_lang], np.object_))
 
             # If the lang_id isn't passed in, then run language id model to set it
             if not src_lang:
@@ -55,7 +64,7 @@ class TritonPythonModel:
                 infer_lang_id_request = pb_utils.InferenceRequest(
                     model_name="fasttext-language-identification",
                     requested_output_names=["SRC_LANG"],
-                    inputs=[input_text],
+                    inputs=[input_text_tt],
                 )
 
                 # Peform synchronous blocking inference request
@@ -66,17 +75,19 @@ class TritonPythonModel:
                     )
 
                 # Get the lang_id
-                src_lang = pb_utils.get_output_tensor_by_name(
+                src_lang_tt = pb_utils.get_output_tensor_by_name(
                     infer_lang_id_response, "SRC_LANG"
                 )
             else:
-                src_lang = pb_utils.Tensor("SRC_LANG", np.array([src_lang], np.object_))
+                src_lang_tt = pb_utils.Tensor(
+                    "SRC_LANG", np.array([src_lang], np.object_)
+                )
 
             # Create inference request object for translation
             infer_seamless_request = pb_utils.InferenceRequest(
                 model_name="seamless-m4t-v2-large",
                 requested_output_names=["TRANSLATED_TEXT"],
-                inputs=[input_text, src_lang, tgt_lang],
+                inputs=[input_text_tt, src_lang_tt, tgt_lang_tt],
             )
 
             # Perform synchronous blocking inference request

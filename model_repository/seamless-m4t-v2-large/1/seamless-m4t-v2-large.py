@@ -49,52 +49,80 @@ class TritonPythonModel:
         List[pb_utils.InferenceResponse]
             _description_
         """
-        output_dtype = self.output_dtype
-
-        # Create a batch to give to the model
-        input_texts = []
-        src_langs = []
-        tgt_langs = []
-        for request in requests:
-            # Get INPUT
-            input_text = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
-            # Convert TritonTensor -> numpy -> python list for input to SeamlessM4T
-            input_text = input_text.as_numpy().tolist()[0].decode("utf-8")
-            input_texts.append(input_text)
-            # Convert TritonTensor -> numpy -> btyes -> str
-            src_lang = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
-            src_lang = src_lang.as_numpy().tolist()[0].decode("utf-8")
-            src_langs.append(src_lang)
-
-            tgt_lang = pb_utils.get_input_tensor_by_name(request, "TGT_LANG")
-            tgt_lang = tgt_lang.as_numpy().tolist()[0].decode("utf-8")
-            tgt_langs.append(tgt_lang)
-
-        # Batch inference
-        inputs_ids = self.processor(
-            text=input_texts,
-            src_lang=src_langs[0],  # For now need to use all the same src lang
-            tgt_lang=tgt_langs[0],  # For now need to use all the same tgt lang
-            return_tensors="pt",
-        ).to(self.device)
-        output_tokens = self.model.generate(
-            **inputs_ids,
-            tgt_lang=tgt_langs[0],
-            num_beams=5,
-            num_return_sequences=1,
-            max_new_tokens=3000,
-            no_repeat_ngram_size=3,
-        )
-        outputs = self.processor.batch_decode(output_tokens, skip_special_tokens=True)
-
         responses = []
-        for output in outputs:
-            output = pb_utils.Tensor(
+        for request in requests:
+            # Get the input data as Triton Tensors
+            try:
+                input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+                src_lang_tt = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
+                tgt_lang_tt = pb_utils.get_input_tensor_by_name(request, "TGT_LANG")
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        f"{exc}", pb_utils.TritonError.INVALID_ARG
+                    )
+                )
+                responses.append(response)
+                continue
+
+            # Convert TritonTensor -> numpy -> python str
+            # NOTE: Triton converts your input string to bytes so you need to decode
+            input_text = input_text_tt.as_numpy()[0].decode("utf-8")
+            src_lang = src_lang_tt.as_numpy()[0].decode("utf-8")
+            tgt_lang = tgt_lang_tt.as_numpy()[0].decode("utf-8")
+
+            # Run through the model for translation
+            # Tokenize
+            try:
+                input_ids = self.processor(
+                    text=input_text,
+                    src_lang=src_lang,
+                    tgt_lang=tgt_lang,
+                    return_tensors="pt",
+                ).to(self.device)
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(f"processor threw:{exc}")
+                )
+                responses.append(response)
+                continue
+
+            # Generate output tokens
+            try:
+                output_tokens = self.model.generate(
+                    **input_ids,
+                    tgt_lang=tgt_lang,
+                    num_beams=5,
+                    num_return_sequences=1,
+                    max_new_tokens=3000,
+                    no_repeat_ngram_size=3,
+                )
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(f"model.generate threw: {exc}")
+                )
+                responses.append(response)
+                continue
+
+            # Decode tokens to text
+            try:
+                translated_text = self.processor.batch_decode(
+                    output_tokens, skip_special_tokens=True
+                )[0]
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError("processor.batch_decode threw: {exc}")
+                )
+                responses.append(response)
+                continue
+
+            # Convert to TritonTensor & make the TritonInferenceResponse
+            translated_text_tt = pb_utils.Tensor(
                 "TRANSLATED_TEXT",
-                np.array([output], dtype=output_dtype),
+                np.array([translated_text], dtype=self.output_dtype),
             )
             inference_response = pb_utils.InferenceResponse(
-                output_tensors=[output],
+                output_tensors=[translated_text_tt],
             )
             responses.append(inference_response)
 

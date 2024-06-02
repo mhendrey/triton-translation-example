@@ -31,22 +31,33 @@ class TritonPythonModel:
         self.REMOVE_NEWLINE = re.compile(r"\n")
 
     def execute(self, requests: List) -> List:
-        """_summary_
+        """Predict the language id of the text provided in the request. Newlines are stripped
+        since they throw an error. Only the top prediction is provided and irrespective of how
+        low the confidence is.
 
         Parameters
         ----------
         requests : List[pb_utils.InferenceRequest]
-            _description_
+            Input must contain the input_text
 
         Returns
         -------
         List[pb_utils.InferenceResponse]
-            _description_
         """
         responses = []
         for request in requests:
             # Get INPUT_TEXT, this is a Triton Tensor
-            input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+            # Using TritonError is a way to send any error messages back to the client
+            try:
+                input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        f"{exc}", pb_utils.TritonError.INVALID_ARG
+                    )
+                )
+                responses.append(response)
+                continue
             # Convert to Python str
             # Though config.pbtxt specifies datatype as TYPE_STRING when sending
             # through a request it is BYTES. Thus must be decoded.
@@ -55,7 +66,14 @@ class TritonPythonModel:
             input_text_cleaned = self.REMOVE_NEWLINE.sub(" ", input_text)
 
             # Run through the model
-            output_labels, _ = self.model.predict(input_text_cleaned, k=1)
+            try:
+                output_labels, _ = self.model.predict(input_text_cleaned, k=1)
+            except Exception as exc:
+                response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(f"{exc}")
+                )
+                responses.append(response)
+                continue
             # Take just the first one because we used k = 1 in predict()
             # Returns '__label__<lang_id>_<script>' but SeamlessM4T uses just lang_id
             src_lang = output_labels[0].replace("__label__", "").split("_")[0]

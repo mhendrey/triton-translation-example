@@ -1,50 +1,40 @@
-# triton-translation-example
-Exploring how to utilize NVIDIA's Triton Inference Server for hosting machine translation workflow.
+# Version 1
+In this initial version, we follow the basic patterns that you find the in NVIDIA
+documentation for creating a Triton Inference deployment package. To keep things
+simple, we leverage the Python backend. This requires having a `.py` file
+that defines a `TritonPythonClass` where you must specify the `initialize()` and
+`execute()` of the class. The `execute()` takes in a list of `InferenceRequests` that
+must be processed and the returns a list of `InferenceResponses`. In addition, each
+deployment requires a config.pbtxt file which specifies the inputs and outputs of the
+deployment.
 
-### Pulling Triton Inference Server Container
-Let's use the latest version of the docker container that has the Python & PyTorch backends
-`$ docker pull nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3`
+In most of the
+[examples](https://github.com/triton-inference-server/python_backend/blob/main/examples/add_sub/model.py),
+the InferenceRequests are interated through in the `execute()` and an InferenceResponse
+is created and appended to a list that gets returned.
 
-## Creating Your Own Conda Environment
-Taking directly from the [NVIDIA documentation](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/python_backend/README.html?highlight=conda#creating-custom-execution-environments).
-This highlights the importance of setting `export PYTHONNOUSERSITE=True` before calling
-conda-pack. In addition, the docs mention that the python version in the conda-pack
-must match the python version in the container.  You can check this by first pulling
-down the container of interest and then going into the container to check python
-```
-$ docker pull nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3
-$ docker run -it nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 /bin/bash
-container:/opt/tritonserver# /usr/bin/python3 -V
-container:/opt/tritonserver# exit
-```
+To make this all work, we will create three Triton Inference deployments. The first two
+are straightforward model deployments:
 
-To create the conda pack needed for an environment:
-```
-$ conda env create -f environment.yml
-$ conda pack -n <environment_name>
-```
+  * fasttext-language-identification
+  * SeamlessM4Tv2ForTextToText
 
-## Launch Triton Inference Server
-The Triton container is launched by mapping two different volumes. The first
-is the model_repository of this github repo to /models in the container. This
-matches the --model-repository option so that tritonserver knows where to find
-your model information. The second maps the local disk cache of huggingface's hub to
-/hub in the container. The different TritonPythonClass.initialize are use the
-cache_dir=/hub to load the appropriate model.
-```
-docker run --gpus=1 --rm --net=host -v ${PWD}/model_repository:/models -v /home/matthew/.cache/huggingface/hub:/hub nvcr.io/nvidia/tritonserver:24.04-pyt-python-py3 tritonserver --model-repository=/models
-```
+A service level deployment, Translate, will be created leveraging NVIDIA's Business
+Logic Scripting (BLS) to allow for logic branching. Specifically, we will use the
+language identification model if the source language is not provided as an optional
+parameter in the request. If the source language is provided, then this step can be
+skipped and the text sent directly to the SeamlessM4T model for translation.
 
-## Fasttext-Language-Identification
+## FastText-Language-Identification
 The first step in the process will be a language identification model. For this
-workflow, I will use the
-[fasttext-language-identification](https://huggingface.co/facebook/fasttext-language-identification). 
+workflow, we will use the [fasttext-language-identification](https://huggingface.co/facebook/fasttext-language-identification). Because this model is very small and fast, we
+specify that it is to be run on the CPU (see config.pbtxt file)
 
 ### Input
 In the config.pbtxt file, we specify that the input text, INPUT_TEXT, will be of
 datatype `TYPE_STRING`. Unfortunately, this doesn't mean what you think it does. When
-requests are given, these will be bytes. This means that the
-TritonPythonClass.execute() must decode the input into strings before proceeding.
+requests are given, these will be bytes. This means that the `execute()` must decode
+the input into strings before proceeding.
 
 FastText requires that newlines be stripped, but this will be handled internally in the
 `execute()` method.
@@ -54,18 +44,15 @@ Returns the source language id, taken from
 [Wikipedia's list of Wikipedias](https://en.wikipedia.org/wiki/List_of_Wikipedias)
 which appears to be the convention that [FastText adopted](https://github.com/facebookresearch/fastText/issues/1305#issuecomment-1586349534).
 
-### Conda Environment
-Within the model_repository/fasttext-language-identification directory do the following
-```
-$ conda env create -f environment.yml
-$ conda-pack -n fasttext-language-identification
-```
+Fortunately, since both this model and the SeamlessM4T are by Meta, the output of this
+model seems compatible with SeamlessM4T after a small amount of cleaning, which is what
+is returned by the model.
 
 ### Example Request
 ```
 import json, requests
 inference_request_fasttext = {
-    "id": "abc",
+    "id": "id_0",
     "inputs": [
         {
             "name": "INPUT_TEXT",
@@ -79,7 +66,8 @@ result = requests.post(
     url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
     json=inference_request_fasttext,
 )
-print(result.json())
+print(result.json()["outputs"][0]["data"][0])
+# spa - for Spanish
 ```
 
 ## Seamless-M4T-v2-Large
@@ -98,7 +86,7 @@ further investigation.
 ### Input
 Similar to the fasttext-language-identification model, the input text has a datatype of
 TYPE_STRING in the config.pbtxt file.  Again, despite the name, incoming requests must
-treat these like bytes and decode them back into strings in TritonPythonClass.execute()
+treat these like bytes and decode them back into strings in `execute()`
 
 In addition to the INPUT_TEXT, the Seamless-M4T model also takes in two additional
 inputs, SRC_LANG and TGT_LANG. These specify the original language of the text and what
@@ -107,17 +95,11 @@ language to translate into. Both are treated as type TYPE_STRING as well.
 ### Output
 Python string of the translated input text is returned.
 
-### Conda Environment
-Within the model_repository/seamless-m4t-v2-large directory do the following
-```
-$ conda env create -f environment.yml
-$ conda-pack -n seamless-m4t-v2-large
-```
 ### Example Request
 ```
 import json, requests
 inference_request_seamless = {
-    "id": "abc",
+    "id": "id_1",
     "inputs": [
         {
             "name": "INPUT_TEXT",
@@ -143,16 +125,31 @@ result = requests.post(
     url="http://localhost:8000/v2/models/seamless-m4t-v2-large/infer",
     json=inference_request_seamless,
 )
-print(result.json())
+print(result.json()["outputs"][0]["data"][0])
+# Today is my birthday.
 ```
 
 ## Translate
-This is the service level Triton deployment package that combines the language
+This is the service level Triton Inference deployment package that combines the language
 identification and translation steps. This leverages the BLS (business logic scripting)
 of Triton Inference Server. This allows us to skip the language identification step
 if the requestor sends in an optional parameter, src_lang, in the request.
 
-To start off, this is nearly a copy of the [BLS synchronized example](https://github.com/triton-inference-server/python_backend/blob/main/examples/bls/sync_model.py).
+Again, to keep things simple in the beginning, we follow the 
+[BLS synchronized example](https://github.com/triton-inference-server/python_backend/blob/main/examples/bls/sync_model.py). In this example, we are blocking on each request and
+thus processing each request one at a time. We will work in later steps to do this
+asynchronously in order to speed things up.
+
+The goal for these service level Triton Inference deployment packages is to create
+a client friendly interface where we can specify some good default behavior and handle
+any specific quirkiness that needs to be done to before sending to the model. For
+example, most clients probably just want to send an entire file to be translated. So,
+we should make that be possible and handle getting the text portion out of the
+document, splitting the document up into appropriate pieces to be translated, and then
+combine the translated text pieces before sending back to the client.
+
+However, for this simple tutorial we will stick to a straightfoward service to keep the
+code cleaner and easier to see the important pieces.
 
 ### Input
 The input text has a datatype of TYPE_STRING which is a natural way for a client
@@ -171,11 +168,7 @@ The Translate service accepts two optional parameters to be passed in a request.
 
 See the examples below for how to use these.
 
-### Conda Environment
-Since this is a higher level of abstraction, there is no need for a conda package just
-yet. It's possible when moving to the async that a conda environment will be needed.
-
-### Example Request
+### Example Requests
 The first example does not provide either `src_lang` or `tgt_lang`. In this case, the
 language identification step will set `src_lang` and `tgt_lang` is set to 'eng' for
 English.
@@ -183,7 +176,7 @@ English.
 ```
 import json, requests
 inference_request = {
-    "id": "abc",
+    "id": "id_2",
     "inputs": [
         {
             "name": "INPUT_TEXT",
@@ -197,7 +190,8 @@ result = requests.post(
     url="http://localhost:8000/v2/models/translate/infer",
     json=inference_request,
 )
-print(result.json())
+print(result.json()["outputs"][0]["data"][0])
+# Today is my birthday.
 ```
 
 In this second example, we pass in the `src_lang` as Spanish since it is known ahead
@@ -205,7 +199,7 @@ of time.
 
 ```
 inference_request_src_lang = {
-    "id": "abc",
+    "id": "id_3",
     "parameters": {"src_lang": "spa"},
     "inputs": [
         {
@@ -220,14 +214,16 @@ result = requests.post(
     url="http://localhost:8000/v2/models/translate/infer",
     json=inference_request_src_lang,
 )
-print(result.json())
+print(result.json()["outputs"][0]["data"][0])
+# Today is my birthday.
 ```
+
 In this example, both `src_lang` is set as 'spa' and `tgt_lang` is set as 'fra' to
 translate our Spanish sentence into French.
 
 ```
 inference_request_src_tgt_lang = {
-    "id": "abc",
+    "id": "id_4",
     "parameters": {"src_lang": "spa", "tgt_lang": "fra"},
     "inputs": [
         {
@@ -242,5 +238,6 @@ result = requests.post(
     url="http://localhost:8000/v2/models/translate/infer",
     json=inference_request_src_tgt_lang,
 )
-print(result.json())
+print(result.json()["outputs"][0]["data"][0])
+# Aujourd'hui est mon anniversaire.
 ```
