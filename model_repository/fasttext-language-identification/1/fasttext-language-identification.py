@@ -43,36 +43,31 @@ class TritonPythonModel:
         List[pb_utils.InferenceResponse]
             _description_
         """
-        output_dtype = self.output_dtype
-
-        # Create a batch to give to the model
-        # Likely not needed here, but certainly want it when on a GPU
-        batch = []
-        for request in requests:
-            # Get INPUT
-            input = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
-            # Convert TritonTensor -> numpy -> python list for fasttext
-            # Eventhough config.pbtxt specifies datatype: TYPE_STRING
-            # when sending through a request it is BYTES. So it must be decoded
-            input_str = input.as_numpy().tolist()[0].decode("utf-8")
-            # Replace newlines with ' '. FastText breaks on \n
-            batch.append(self.REMOVE_NEWLINE.sub(" ", input_str))
-
-        # Batch inference
-        output_labels, _ = self.model.predict(batch, k=1)
-
         responses = []
-        for output_label, request in zip(output_labels, requests):
-            # Clean up the label. It has '__label__<lang_id>_<script>'
-            # Take just the first one because we used k=1 in predict()
-            output_label, _ = output_label[0].replace("__label__", "").split("_")
-            output = pb_utils.Tensor(
+        for request in requests:
+            # Get INPUT_TEXT, this is a Triton Tensor
+            input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
+            # Convert to Python str
+            # Though config.pbtxt specifies datatype as TYPE_STRING when sending
+            # through a request it is BYTES. Thus must be decoded.
+            input_text = input_text_tt.as_numpy()[0].decode("utf-8")
+            # Replace newlines with ' '. FastText breaks on \n
+            input_text_cleaned = self.REMOVE_NEWLINE.sub(" ", input_text)
+
+            # Run through the model
+            output_labels, _ = self.model.predict(input_text_cleaned, k=1)
+            # Take just the first one because we used k = 1 in predict()
+            # Returns '__label__<lang_id>_<script>' but SeamlessM4T uses just lang_id
+            src_lang = output_labels[0].replace("__label__", "").split("_")[0]
+
+            # Make Triton Inference Response
+            src_lang_tt = pb_utils.Tensor(
                 "SRC_LANG",
-                np.array([output_label], dtype=output_dtype),
+                np.array([src_lang], dtype=self.output_dtype),
             )
-            inference_response = pb_utils.InferenceResponse(
-                output_tensors=[output],
+            response = pb_utils.InferenceResponse(
+                output_tensors=[src_lang_tt],
             )
-            responses.append(inference_response)
+            responses.append(response)
 
         return responses
