@@ -241,3 +241,84 @@ result = requests.post(
 print(result.json()["outputs"][0]["data"][0])
 # Aujourd'hui est mon anniversaire.
 ```
+
+## Perf_Analyzer
+We will leverage the performance analyzer that Triton Inference Server
+provides.
+
+### Starting SDK Container
+Keep the Triton Inference Server container running and start up the SDK container.
+This has the perf_analyzer command-line tool and all the needed dependencies. The
+docs mention you can `pip install tritonclient` to get perf_analyzer, but warn you
+that it won't install all the dependencies you may need. That was the case when we
+tried to pip install on an Ubuntu machine.
+
+```
+$ docker pull nvcr.io/nvidia/tritonserver:24.04-py-sdk
+$ docker run --rm -it --net host -v ./data:/workspace/data nvcr.io/nvidia/tritonserver:24.04-py3-sdk
+```
+This start up the container and mounts the `/data` directory which contains the
+load test data that will be used.
+
+### Test Data
+Test data comes from sentences pulled from a Spanish News Classification dataset on
+[Kaggle](https://www.kaggle.com/datasets/kevinmorgado/spanish-news-classification).
+The data was split on '.' to get sentences and then threw out very short sentences
+as a simple data cleaning step. These are stored in `/data/spanish-sentences.json`
+in a form specified by the Perf_Analyzer documentation.
+
+### Running the perf_analyzer
+Inside the SDK container, run the following command:
+
+```
+perf_analyzer -m translate --input-data data/spanish-sentences.json --bls-composing-models fasttext-language-identification,seamless-m4t-v2-large --measurement-interval 20000
+```
+
+This launches the perf_analyzer
+  * `-m` Analyze the provided deployed model
+  * `--input-data` Use the specified JSON file for testing data
+  * `--bls-composing-models` Comma separated list of underlying deployments
+  * `--measurement-interval` Length of testing window in ms
+
+### Results
+On an RTX 4090, we get the following:
+
+*** Measurement Settings ***
+  Batch size: 1
+  Service Kind: Triton
+  Using "time_windows" mode for stabilization
+  Measurement window: 20000 msec
+  Using synchronous calls for inference
+  Stabilizing using average latency
+
+Request concurrency: 1
+  Client: 
+    Request count: 204
+    Throughput: 2.83324 infer/sec
+    Avg latency: 353702 usec (standard deviation 119449 usec)
+    p50 latency: 329801 usec
+    p90 latency: 516625 usec
+    p95 latency: 596750 usec
+    p99 latency: 653970 usec
+    Avg HTTP time: 353691 usec (send/recv 39 usec + response wait 353652 usec)
+  Server: 
+    Inference count: 204
+    Execution count: 204
+    Successful request count: 204
+    Avg request latency: 353265 usec (overhead 866 usec + queue 83 usec + compute 352316 usec)
+
+  Composing models: 
+  fasttext-language-identification, version: 1
+      Inference count: 204
+      Execution count: 204
+      Successful request count: 204
+      Avg request latency: 453 usec (overhead 2 usec + queue 41 usec + compute input 11 usec + compute infer 388 usec + compute output 10 usec)
+
+  seamless-m4t-v2-large, version: 1
+      Inference count: 204
+      Execution count: 204
+      Successful request count: 204
+      Avg request latency: 351951 usec (overhead 3 usec + queue 42 usec + compute input 10 usec + compute infer 351869 usec + compute output 26 usec)
+
+Inferences/Second vs. Client Average Batch Latency
+Concurrency: 1, throughput: 2.83324 infer/sec, latency 353702 usec
