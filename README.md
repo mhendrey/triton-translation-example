@@ -245,41 +245,41 @@ While that's running, remember that previously we got about 2.83 infer/sec.
 On an RTX 4090, we get the following:
 
 *** Measurement Settings ***
-  Batch size: 1
-  Service Kind: Triton
-  Using "time_windows" mode for stabilization
-  Measurement window: 20000 msec
-  Using synchronous calls for inference
-  Stabilizing using average latency
+  * Batch size: 1
+  * Service Kind: Triton
+  * Using "time_windows" mode for stabilization
+  * Measurement window: 20000 msec
+  * Using synchronous calls for inference
+  * Stabilizing using average latency
 
 Request concurrency: 1
-  Client: 
-    Request count: 199
-    Throughput: 2.76382 infer/sec
-    Avg latency: 362294 usec (standard deviation 121656 usec)
-    p50 latency: 339668 usec
-    p90 latency: 523333 usec
-    p95 latency: 600798 usec
-    p99 latency: 667485 usec
-    Avg HTTP time: 362283 usec (send/recv 40 usec + response wait 362243 usec)
-  Server: 
-    Inference count: 199
-    Execution count: 199
-    Successful request count: 199
-    Avg request latency: 361844 usec (overhead 891 usec + queue 164 usec + compute 360789 usec)
+  * Client: 
+    * Request count: 199
+    * Throughput: 2.76382 infer/sec
+    * Avg latency: 362294 usec (standard deviation 121656 usec)
+    * p50 latency: 339668 usec
+    * p90 latency: 523333 usec
+    * p95 latency: 600798 usec
+    * p99 latency: 667485 usec
+    * Avg HTTP time: 362283 usec (send/recv 40 usec + response wait 362243 usec)
+  * Server: 
+    * Inference count: 199
+    * Execution count: 199
+    * Successful request count: 199
+    * Avg request latency: 361844 usec (overhead 891 usec + queue 164 usec + compute 360789 usec)
 
-  Composing models: 
-  fasttext-language-identification, version: 1
-      Inference count: 199
-      Execution count: 199
-      Successful request count: 199
-      Avg request latency: 559 usec (overhead 3 usec + queue 87 usec + compute input 14 usec + compute infer 441 usec + compute output 12 usec)
+Composing models: 
+  * fasttext-language-identification, version: 1
+      * Inference count: 199
+      * Execution count: 199
+      * Successful request count: 199
+      * Avg request latency: 559 usec (overhead 3 usec + queue 87 usec + compute input 14 usec + compute infer 441 usec + compute output 12 usec)
 
-  seamless-m4t-v2-large, version: 1
-      Inference count: 199
-      Execution count: 199
-      Successful request count: 199
-      Avg request latency: 360401 usec (overhead 4 usec + queue 77 usec + compute input 11 usec + compute infer 360280 usec + compute output 27 usec)
+  * seamless-m4t-v2-large, version: 1
+      * Inference count: 199
+      * Execution count: 199
+      * Successful request count: 199
+      * Avg request latency: 360401 usec (overhead 4 usec + queue 77 usec + compute input 11 usec + compute infer 360280 usec + compute output 27 usec)
 
 Inferences/Second vs. Client Average Batch Latency
 Concurrency: 1, throughput: 2.76382 infer/sec, latency 362294 usec
