@@ -1,177 +1,24 @@
-# Version 1
-In this initial version, we follow the basic patterns that you find the in NVIDIA
-documentation for creating a Triton Inference deployment package. To keep things
-simple, we leverage the Python backend. This requires having a `.py` file
-that defines a `TritonPythonClass` where you must specify the `initialize()` and
-`execute()` of the class. The `execute()` takes in a list of `InferenceRequests` that
-must be processed and the returns a list of `InferenceResponses`. In addition, each
-deployment requires a config.pbtxt file which specifies the inputs and outputs of the
-deployment.
+# Version 2: Dynamic Batching
+With a simple, perhaps even naive, approach implemented in v1, its safe to say that the infers/sec metric doesn't really blow you away. So let's continue on and see if we can improve the performance using Triton Inference Server's dynamic batching capability.
 
-In most of the
-[examples](https://github.com/triton-inference-server/python_backend/blob/main/examples/add_sub/model.py),
-the InferenceRequests are interated through in the `execute()` and an InferenceResponse
-is created and appended to a list that gets returned.
+## Enabling Dynamic Batching
+Let's start by simple enabling dynamic batching. To keep in the spirit of this
+tutorial, let's start with the simplest approach which simple turns on dynamic
+batching. To do this, we need to edit the config.pbtxt files to add the following
+line to each of the three config.pbtxt files in the group at the top of the file.
+This specifies the maximum batch size to accumulate before passing it to the models.
 
-To make this all work, we will create three Triton Inference deployments. The first two
-are straightforward model deployments:
-
-  * fasttext-language-identification
-  * SeamlessM4Tv2ForTextToText
-
-A service level deployment, Translate, will be created leveraging NVIDIA's Business
-Logic Scripting (BLS) to allow for logic branching. Specifically, we will use the
-language identification model if the source language is not provided as an optional
-parameter in the request. If the source language is provided, then this step can be
-skipped and the text sent directly to the SeamlessM4T model for translation.
-
-## FastText-Language-Identification
-The first step in the process will be a language identification model. For this
-workflow, we will use the [fasttext-language-identification](https://huggingface.co/facebook/fasttext-language-identification). Because this model is very small and fast, we
-specify that it is to be run on the CPU (see config.pbtxt file)
-
-### Input
-In the config.pbtxt file, we specify that the input text, INPUT_TEXT, will be of
-datatype `TYPE_STRING`. Unfortunately, this doesn't mean what you think it does. When
-requests are given, these will be bytes. This means that the `execute()` must decode
-the input into strings before proceeding.
-
-FastText requires that newlines be stripped, but this will be handled internally in the
-`execute()` method.
-
-### Output
-Returns the source language id, taken from
-[Wikipedia's list of Wikipedias](https://en.wikipedia.org/wiki/List_of_Wikipedias)
-which appears to be the convention that [FastText adopted](https://github.com/facebookresearch/fastText/issues/1305#issuecomment-1586349534).
-
-Fortunately, since both this model and the SeamlessM4T are by Meta, the output of this
-model seems compatible with SeamlessM4T after a small amount of cleaning, which is what
-is returned by the model.
-
-### Example Request
 ```
-import json, requests
-inference_request_fasttext = {
-    "id": "id_0",
-    "inputs": [
-        {
-            "name": "INPUT_TEXT",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["Hoy es mi cumpleaños."],
-        },
-    ],
-}
-result = requests.post(
-    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
-    json=inference_request_fasttext,
-)
-print(result.json()["outputs"][0]["data"][0])
-# spa - for Spanish
+max_batch_size: 16
+```
+At the bottom of each of the files, add this line to enable the default dynamic
+batching.
+
+```
+dynamic_batching {}
 ```
 
-## Seamless-M4T-v2-Large
-For translation, we use the SeamlessM4Tv2ForTextToText (large) model in Transformers.
-By specifying that we just want the ForTextToText, we save some GPU RAM by not also
-loading in the audio model. To further save space, the model is loaded with torch_dtype
-of float16 instead of using the default float32. This saves about 1/2 the GPU RAM as
-well. This model will take in the text to be translated, what language the source text
-is, and finally what language do we want the text translated into.
-
-NOTE: Transformers only takes in src_lang:str and tgt_lang:str. This seems to imply
-that if you want to do batch processing that a batch must be all the same src_lang
-and all must have the same tgt_lang too. This seems highly restrictive and requires
-further investigation.
-
-### Input
-Similar to the fasttext-language-identification model, the input text has a datatype of
-TYPE_STRING in the config.pbtxt file.  Again, despite the name, incoming requests must
-treat these like bytes and decode them back into strings in `execute()`
-
-In addition to the INPUT_TEXT, the Seamless-M4T model also takes in two additional
-inputs, SRC_LANG and TGT_LANG. These specify the original language of the text and what
-language to translate into. Both are treated as type TYPE_STRING as well.
-
-### Output
-Python string of the translated input text is returned.
-
-### Example Request
-```
-import json, requests
-inference_request_seamless = {
-    "id": "id_1",
-    "inputs": [
-        {
-            "name": "INPUT_TEXT",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["Hoy es mi cumpleaños."],
-        },
-        {
-            "name": "SRC_LANG",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["spa"],
-        },
-        {
-            "name": "TGT_LANG",
-            "shape": [1],
-            "datatype": "BYTES",
-            "data": ["eng"],
-        }
-    ],
-}
-result = requests.post(
-    url="http://localhost:8000/v2/models/seamless-m4t-v2-large/infer",
-    json=inference_request_seamless,
-)
-print(result.json()["outputs"][0]["data"][0])
-# Today is my birthday.
-```
-
-## Translate
-This is the service level Triton Inference deployment package that combines the language
-identification and translation steps. This leverages the BLS (business logic scripting)
-of Triton Inference Server. This allows us to skip the language identification step
-if the requestor sends in an optional parameter, src_lang, in the request.
-
-Again, to keep things simple in the beginning, we follow the 
-[BLS synchronized example](https://github.com/triton-inference-server/python_backend/blob/main/examples/bls/sync_model.py). In this example, we are blocking on each request and
-thus processing each request one at a time. We will work in later steps to do this
-asynchronously in order to speed things up.
-
-The goal for these service level Triton Inference deployment packages is to create
-a client friendly interface where we can specify some good default behavior and handle
-any specific quirkiness that needs to be done to before sending to the model. For
-example, most clients probably just want to send an entire file to be translated. So,
-we should make that be possible and handle getting the text portion out of the
-document, splitting the document up into appropriate pieces to be translated, and then
-combine the translated text pieces before sending back to the client.
-
-However, for this simple tutorial we will stick to a straightfoward service to keep the
-code cleaner and easier to see the important pieces.
-
-### Input
-The input text has a datatype of TYPE_STRING which is a natural way for a client
-to want to send the data to the translation service. To make this work, the input
-name to this deployment package needed to match the name of the inputs to both
-the FastText-Language-Identification and the Seamless-M4T-v2-Large.
-
-### Output
-The output text is also of datatype TYPE_STRING.
-
-### Optional Request Parameters
-The Translate service accepts two optional parameters to be passed in a request.
-
-* src_lang - If provided, the language identification step is skipped
-* tgt_lang - Specifies the language to translate into. If not provided 'eng' is used
-
-See the examples below for how to use these.
-
-### Example Requests
-The first example does not provide either `src_lang` or `tgt_lang`. In this case, the
-language identification step will set `src_lang` and `tgt_lang` is set to 'eng' for
-English.
+Now restart the service by running the `docker-compose up` command and let's send the following response from a python interpretter like we did before.
 
 ```
 import json, requests
@@ -193,18 +40,166 @@ result = requests.post(
 print(result.json()["outputs"][0]["data"][0])
 # Today is my birthday.
 ```
+But this is throwing an error. So let's see that error by `$ result.json()` and
+see it say
 
-In this second example, we pass in the `src_lang` as Spanish since it is known ahead
-of time.
+```{'error': "[request id: id_2] unexpected shape for input 'INPUT_TEXT' for model 'translate'. Expected [-1,1], got [1]. NOTE: Setting a non-zero max_batch_size in the model config requires a batch dimension to be prepended to each input shape. If you want to specify the full shape including the batch dim in your input dims config, try setting max_batch_size to zero. See the model configuration docs for more info on max_batch_size."}```
+
+It turns out that dynamic batching causes the inputs shapes to change by prepending a
+batching dimension to the input. In this case, each request is a batch of 1 and instead
+of getting a request like ["Today is my birthday"] the input is
+[["Today is my birthday"]].  This means that we need to make two changes to the code.
+
+### Modifications
+It seems we have a little work to do to make dynamic batching functional. We will need
+to make two changes. The first is modifications in the code inside each of the
+`execute()` functions. The second is to how requests are sent to the endpoints.
+
+### Code Modications
+At issue is that the Triton Tensor inputs will be of shape [1, 1] because of the
+dynamic batching (even if we don't change the config.pbtxt `dims` fields) with the
+first 1 being the size of the batch. This can easily be resolved by calling numpy's
+`.reshape(-1)` once we convert the input Triton Tensors to numpy arrays. Once that is
+done, the rest of the code will function the same as before.
+
+For the fasttext-language-identification.py file we make just these two changes
+```
+-  input_text = input_text_tt.as_numpy()[0].decode("utf-8")
++  input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
+
+   src_lang_tt = pb_utils.Tensor(
+      "SRC_LANG",
+-     np.array([src_lang], dtype=self.output_dtype),
++     np.array([src_lang], dtype=self.output_dtype).reshape(-1, 1),
+   )
+```
+
+Similarly, in seamless-m4t-v2-large.py we change
+```
+-  input_text = input_text_tt.as_numpy()[0].decode("utf-8")
+-  src_lang = src_lang_tt.as_numpy()[0].decode("utf-8")
+-  tgt_lang = tgt_lang_tt.as_numpy()[0].decode("utf-8")
++  input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
++  src_lang = src_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
++  gt_lang = tgt_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
+ 
+   translated_text_tt = pb_utils.Tensor(
+       "TRANSLATED_TEXT",
+-      np.array([translated_text], dtype=self.output_dtype),
++      np.array([translated_text], dtype=self.output_dtype).reshape(-1, 1),
+   )
+```
+
+Lastly, in translate.py we change:
+```
+-  tgt_lang_tt = pb_utils.Tensor("TGT_LANG", np.array([tgt_lang], np.object_))
++  tgt_lang_tt = pb_utils.Tensor(
++      "TGT_LANG", np.array([tgt_lang], np.object_).reshape(-1, 1)
++  )
+ 
+   src_lang_tt = pb_utils.Tensor(
+-      "SRC_LANG", np.array([src_lang], np.object_)
++      "SRC_LANG", np.array([src_lang], np.object_).reshape(-1, 1)
+   )
+```
+
+With the code changes made, let's stop the Triton Inference Server and restart it by
+calling the `docker-compose up` command from the parent directory.
+
+### Request Modifications
+The second change needed is in the `shape` field of a request sent to any of the
+inference endpoints that have dynamic batching enabled (all of them in this example).
+Previously the request had `shape: [1]` in the JSON, but now it must also have the
+batch size listed. With a batch size of just 1, it becomes `shape: [1, 1]`.
+
+#### FastText Example
+For the fasttext-language-id, we now submit a request like so:
 
 ```
+import json, requests
+inference_request_fasttext = {
+    "id": "id_0",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1, 1],  # Previously we just had [1]
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        },
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/fasttext-language-identification/infer",
+    json=inference_request_fasttext,
+)
+print(result.json()["outputs"][0]["data"][0])
+# spa - for Spanish
+```
+#### SeamlessM4T Example
+The seamless-m4t-v2-large request now looks like:
+
+```
+import json, requests
+inference_request_seamless = {
+    "id": "id_1",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1, 1], # Previously we just had [1]
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        },
+        {
+            "name": "SRC_LANG",
+            "shape": [1, 1], # Previously we just had [1]
+            "datatype": "BYTES",
+            "data": ["spa"],
+        },
+        {
+            "name": "TGT_LANG",
+            "shape": [1, 1], # Previously we just had [1]
+            "datatype": "BYTES",
+            "data": ["eng"],
+        }
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/seamless-m4t-v2-large/infer",
+    json=inference_request_seamless,
+)
+print(result.json()["outputs"][0]["data"][0])
+# Today is my birthday.
+```
+#### Translate Examples
+And finally, using the service level deployment, translate:
+
+```
+import json, requests
+inference_request = {
+    "id": "id_2",
+    "inputs": [
+        {
+            "name": "INPUT_TEXT",
+            "shape": [1, 1], # Previously we had just [1]
+            "datatype": "BYTES",
+            "data": ["Hoy es mi cumpleaños."],
+        }
+    ],
+}
+result = requests.post(
+    url="http://localhost:8000/v2/models/translate/infer",
+    json=inference_request,
+)
+print(result.json()["outputs"][0]["data"][0])
+# Today is my birthday.
+
 inference_request_src_lang = {
     "id": "id_3",
     "parameters": {"src_lang": "spa"},
     "inputs": [
         {
             "name": "INPUT_TEXT",
-            "shape": [1],
+            "shape": [1, 1], # Previously we had just [1]
             "datatype": "BYTES",
             "data": ["Hoy es mi cumpleaños."],
         }
@@ -216,19 +211,14 @@ result = requests.post(
 )
 print(result.json()["outputs"][0]["data"][0])
 # Today is my birthday.
-```
 
-In this example, both `src_lang` is set as 'spa' and `tgt_lang` is set as 'fra' to
-translate our Spanish sentence into French.
-
-```
 inference_request_src_tgt_lang = {
     "id": "id_4",
     "parameters": {"src_lang": "spa", "tgt_lang": "fra"},
     "inputs": [
         {
             "name": "INPUT_TEXT",
-            "shape": [1],
+            "shape": [1, 1], # Previously we had just [1]
             "datatype": "BYTES",
             "data": ["Hoy es mi cumpleaños."],
         }
@@ -243,42 +233,13 @@ print(result.json()["outputs"][0]["data"][0])
 ```
 
 ## Perf_Analyzer
-We will leverage the performance analyzer that Triton Inference Server
-provides.
-
-### Starting SDK Container
-Keep the Triton Inference Server container running and start up the SDK container.
-This has the perf_analyzer command-line tool and all the needed dependencies. The
-docs mention you can `pip install tritonclient` to get perf_analyzer, but warn you
-that it won't install all the dependencies you may need. That was the case when we
-tried to pip install on an Ubuntu machine.
-
-```
-$ docker pull nvcr.io/nvidia/tritonserver:24.04-py-sdk
-$ docker run --rm -it --net host -v ./data:/workspace/data nvcr.io/nvidia/tritonserver:24.04-py3-sdk
-```
-This start up the container and mounts the `/data` directory which contains the
-load test data that will be used.
-
-### Test Data
-Test data comes from sentences pulled from a Spanish News Classification dataset on
-[Kaggle](https://www.kaggle.com/datasets/kevinmorgado/spanish-news-classification).
-The data was split on '.' to get sentences and then threw out very short sentences
-as a simple data cleaning step. These are stored in `/data/spanish-sentences.json`
-in a form specified by the Perf_Analyzer documentation.
-
-### Running the perf_analyzer
-Inside the SDK container, run the following command:
+With the changes made, let's see how well we do with the perf_analyzer. Switch over to
+the window where the SDK container is running and run the following command again.
 
 ```
 perf_analyzer -m translate --input-data data/spanish-sentences.json --bls-composing-models fasttext-language-identification,seamless-m4t-v2-large --measurement-interval 20000
 ```
-
-This launches the perf_analyzer
-  * `-m` Analyze the provided deployed model
-  * `--input-data` Use the specified JSON file for testing data
-  * `--bls-composing-models` Comma separated list of underlying deployments
-  * `--measurement-interval` Length of testing window in ms
+While that's running, remember that previously we got about 2.83 infer/sec.
 
 ### Results
 On an RTX 4090, we get the following:
@@ -293,32 +254,80 @@ On an RTX 4090, we get the following:
 
 Request concurrency: 1
   Client: 
-    Request count: 204
-    Throughput: 2.83324 infer/sec
-    Avg latency: 353702 usec (standard deviation 119449 usec)
-    p50 latency: 329801 usec
-    p90 latency: 516625 usec
-    p95 latency: 596750 usec
-    p99 latency: 653970 usec
-    Avg HTTP time: 353691 usec (send/recv 39 usec + response wait 353652 usec)
+    Request count: 199
+    Throughput: 2.76382 infer/sec
+    Avg latency: 362294 usec (standard deviation 121656 usec)
+    p50 latency: 339668 usec
+    p90 latency: 523333 usec
+    p95 latency: 600798 usec
+    p99 latency: 667485 usec
+    Avg HTTP time: 362283 usec (send/recv 40 usec + response wait 362243 usec)
   Server: 
-    Inference count: 204
-    Execution count: 204
-    Successful request count: 204
-    Avg request latency: 353265 usec (overhead 866 usec + queue 83 usec + compute 352316 usec)
+    Inference count: 199
+    Execution count: 199
+    Successful request count: 199
+    Avg request latency: 361844 usec (overhead 891 usec + queue 164 usec + compute 360789 usec)
 
   Composing models: 
   fasttext-language-identification, version: 1
-      Inference count: 204
-      Execution count: 204
-      Successful request count: 204
-      Avg request latency: 453 usec (overhead 2 usec + queue 41 usec + compute input 11 usec + compute infer 388 usec + compute output 10 usec)
+      Inference count: 199
+      Execution count: 199
+      Successful request count: 199
+      Avg request latency: 559 usec (overhead 3 usec + queue 87 usec + compute input 14 usec + compute infer 441 usec + compute output 12 usec)
 
   seamless-m4t-v2-large, version: 1
-      Inference count: 204
-      Execution count: 204
-      Successful request count: 204
-      Avg request latency: 351951 usec (overhead 3 usec + queue 42 usec + compute input 10 usec + compute infer 351869 usec + compute output 26 usec)
+      Inference count: 199
+      Execution count: 199
+      Successful request count: 199
+      Avg request latency: 360401 usec (overhead 4 usec + queue 77 usec + compute input 11 usec + compute infer 360280 usec + compute output 27 usec)
 
 Inferences/Second vs. Client Average Batch Latency
-Concurrency: 1, throughput: 2.83324 infer/sec, latency 353702 usec
+Concurrency: 1, throughput: 2.76382 infer/sec, latency 362294 usec
+
+WHAT!? That's not any faster. Where do you think we could have gone wrong?
+
+### Next Steps
+It turns out we didn't really accomplish much with this version of the code. Though we
+have dynamic batching enabled, it turns out that all we have really changed is that
+instead of calling `execute([request_1]); execute([request_2])` that we
+are now doing `execute([request_1, request_2])` as a result of dynamic batching.
+However, inside the `execute()` we are still just for-looping through the requests
+and calling the model each time on a batch of size 1.  To really take advantage of
+dynamic batching we need to gather up the inputs of the requests before calling the
+model on them. 
+
+This [Github issue](https://github.com/triton-inference-server/server/issues/5926#issuecomment-1585161393) has a good explanation and some pseudo code that we will
+follow. Note that link shows a slightly more complicated version that we will get to
+which handles the case when incoming requests could have different batch sizes. But
+again, to keep things simple, let's assume that all incoming requests have a batch
+size 1.
+
+When we are finished our code will look something like this:
+
+```
+def initialize(self, args):
+    # ...
+    self.model = MyModel()
+
+def execute(self, requests):
+    batch = []
+    for request in requests:
+        np_input = pb_utils.get_input_tensor_by_name(request, "INPUT0").as_numpy()
+        batch.append(np_input)
+    
+    # Gather into a single batch
+    batched_input = np.vstack(batch)
+    # Compute the full batch in one call
+    batched_output = self.model.infer(batch_input)
+    
+    # Python backend must return a response for each request received
+    responses = []
+    for output in batched_output:
+        # Make your Triton Tensor from the output
+        output_tt = pb_utils.Tensor(...)
+        response = pb_utils.InferenceResponse(
+                output_tensors=[output_tt],
+        )
+        responses.append(response)
+    return responses
+```

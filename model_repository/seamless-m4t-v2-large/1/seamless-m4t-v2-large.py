@@ -67,9 +67,9 @@ class TritonPythonModel:
 
             # Convert TritonTensor -> numpy -> python str
             # NOTE: Triton converts your input string to bytes so you need to decode
-            input_text = input_text_tt.as_numpy()[0].decode("utf-8")
-            src_lang = src_lang_tt.as_numpy()[0].decode("utf-8")
-            tgt_lang = tgt_lang_tt.as_numpy()[0].decode("utf-8")
+            input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
+            src_lang = src_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
+            tgt_lang = tgt_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
 
             # Run through the model for translation
             # Tokenize
@@ -119,7 +119,7 @@ class TritonPythonModel:
             # Convert to TritonTensor & make the TritonInferenceResponse
             translated_text_tt = pb_utils.Tensor(
                 "TRANSLATED_TEXT",
-                np.array([translated_text], dtype=self.output_dtype),
+                np.array([translated_text], dtype=self.output_dtype).reshape(-1, 1),
             )
             inference_response = pb_utils.InferenceResponse(
                 output_tensors=[translated_text_tt],

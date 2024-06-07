@@ -61,7 +61,7 @@ class TritonPythonModel:
             # Convert to Python str
             # Though config.pbtxt specifies datatype as TYPE_STRING when sending
             # through a request it is BYTES. Thus must be decoded.
-            input_text = input_text_tt.as_numpy()[0].decode("utf-8")
+            input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
             # Replace newlines with ' '. FastText breaks on \n
             input_text_cleaned = self.REMOVE_NEWLINE.sub(" ", input_text)
 
@@ -81,7 +81,7 @@ class TritonPythonModel:
             # Make Triton Inference Response
             src_lang_tt = pb_utils.Tensor(
                 "SRC_LANG",
-                np.array([src_lang], dtype=self.output_dtype),
+                np.array([src_lang], dtype=self.output_dtype).reshape(-1, 1),
             )
             response = pb_utils.InferenceResponse(
                 output_tensors=[src_lang_tt],

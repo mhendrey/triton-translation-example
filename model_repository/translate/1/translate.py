@@ -56,7 +56,9 @@ class TritonPythonModel:
             request_params = json.loads(request.parameters())
             src_lang = request_params.get("src_lang", None)
             tgt_lang = request_params.get("tgt_lang", "eng")
-            tgt_lang_tt = pb_utils.Tensor("TGT_LANG", np.array([tgt_lang], np.object_))
+            tgt_lang_tt = pb_utils.Tensor(
+                "TGT_LANG", np.array([tgt_lang], np.object_).reshape(-1, 1)
+            )
 
             # If the lang_id isn't passed in, then run language id model to set it
             if not src_lang:
@@ -80,7 +82,7 @@ class TritonPythonModel:
                 )
             else:
                 src_lang_tt = pb_utils.Tensor(
-                    "SRC_LANG", np.array([src_lang], np.object_)
+                    "SRC_LANG", np.array([src_lang], np.object_).reshape(-1, 1)
                 )
 
             # Create inference request object for translation
