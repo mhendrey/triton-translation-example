@@ -49,20 +49,24 @@ class TritonPythonModel:
         List[pb_utils.InferenceResponse]
             _description_
         """
-        responses = []
-        for request in requests:
+        responses = [None] * len(requests)
+        batch_text = []
+        batch_src_lang = []
+        batch_tgt_lang = []
+        batch2req = {}  # Maps batch id to corresponding request id
+        for r_id, request in enumerate(requests):
             # Get the input data as Triton Tensors
             try:
                 input_text_tt = pb_utils.get_input_tensor_by_name(request, "INPUT_TEXT")
                 src_lang_tt = pb_utils.get_input_tensor_by_name(request, "SRC_LANG")
                 tgt_lang_tt = pb_utils.get_input_tensor_by_name(request, "TGT_LANG")
             except Exception as exc:
-                response = pb_utils.InferenceResponse(
+                error_response = pb_utils.InferenceResponse(
                     error=pb_utils.TritonError(
                         f"{exc}", pb_utils.TritonError.INVALID_ARG
                     )
                 )
-                responses.append(response)
+                responses[r_id] = error_response
                 continue
 
             # Convert TritonTensor -> numpy -> python str
@@ -71,51 +75,76 @@ class TritonPythonModel:
             src_lang = src_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
             tgt_lang = tgt_lang_tt.as_numpy().reshape(-1)[0].decode("utf-8")
 
-            # Run through the model for translation
-            # Tokenize
-            try:
-                input_ids = self.processor(
-                    text=input_text,
-                    src_lang=src_lang,
-                    tgt_lang=tgt_lang,
-                    return_tensors="pt",
-                ).to(self.device)
-            except Exception as exc:
-                response = pb_utils.InferenceResponse(
-                    error=pb_utils.TritonError(f"processor threw:{exc}")
-                )
-                responses.append(response)
-                continue
+            batch2req[len(batch_text)] = r_id
+            batch_text.append(input_text)
+            batch_src_lang.append(src_lang)
+            batch_tgt_lang.append(tgt_lang)
 
-            # Generate output tokens
-            try:
-                output_tokens = self.model.generate(
-                    **input_ids,
-                    tgt_lang=tgt_lang,
-                    num_beams=5,
-                    num_return_sequences=1,
-                    max_new_tokens=3000,
-                    no_repeat_ngram_size=3,
+        # NOTE: For tutorial, we are going to not worry about the fact that SeamlessM4T
+        # can take a text:List[str], but it ONLY takes src_lang:str & tgt_lang:str
+        # This means you can't have a batch with mixed languages on input or translate
+        # to different languages. But it seems like this is a good pattern to follow
+        # so we will just assume (which our data is) all the same languages.
+        src_lang = batch_src_lang[0]
+        tgt_lang = batch_tgt_lang[0]
+        # Run through the model for translation all at once
+        # Tokenize
+        try:
+            input_ids = self.processor(
+                text=batch_text,
+                src_lang=src_lang,
+                tgt_lang=tgt_lang,
+                return_tensors="pt",
+            ).to(self.device)
+        except Exception as exc:
+            for b_id, input_text in enumerate(batch_text):
+                error_response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        f"seamless.processor had an error with the batch. You sent "
+                        + f"{input_text}. Check that it is not the problem."
+                    )
                 )
-            except Exception as exc:
-                response = pb_utils.InferenceResponse(
-                    error=pb_utils.TritonError(f"model.generate threw: {exc}")
-                )
-                responses.append(response)
-                continue
+                responses[batch2req[b_id]] = error_response
+            return responses
 
-            # Decode tokens to text
-            try:
-                translated_text = self.processor.batch_decode(
-                    output_tokens, skip_special_tokens=True
-                )[0]
-            except Exception as exc:
-                response = pb_utils.InferenceResponse(
-                    error=pb_utils.TritonError("processor.batch_decode threw: {exc}")
+        # Generate output tokens
+        try:
+            output_tokens = self.model.generate(
+                **input_ids,
+                tgt_lang=tgt_lang,
+                num_beams=5,
+                num_return_sequences=1,
+                max_new_tokens=3000,
+                no_repeat_ngram_size=3,
+            )
+        except Exception as exc:
+            for b_id, input_text in enumerate(batch_text):
+                error_response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        f"seamless.generate had an error in the batch. You sent "
+                        + f"{input_text}. Check that it is not the problem"
+                    )
                 )
-                responses.append(response)
-                continue
+                responses[batch2req[b_id]] = error_response
+            return responses
 
+        # Decode tokens to text
+        try:
+            translated_batch_text = self.processor.batch_decode(
+                output_tokens, skip_special_tokens=True
+            )
+        except Exception as exc:
+            for b_id, input_text in enumerate(batch_text):
+                error_response = pb_utils.InferenceResponse(
+                    error=pb_utils.TritonError(
+                        "seamless.batch_decode had an erro in the batch. You sent "
+                        + f"{input_text}. Check that it is not the problem"
+                    )
+                )
+                responses[batch2req[b_id]] = error_response
+            return responses
+
+        for b_id, translated_text in enumerate(translated_batch_text):
             # Convert to TritonTensor & make the TritonInferenceResponse
             translated_text_tt = pb_utils.Tensor(
                 "TRANSLATED_TEXT",
@@ -124,6 +153,6 @@ class TritonPythonModel:
             inference_response = pb_utils.InferenceResponse(
                 output_tensors=[translated_text_tt],
             )
-            responses.append(inference_response)
+            responses[batch2req[b_id]] = inference_response
 
         return responses

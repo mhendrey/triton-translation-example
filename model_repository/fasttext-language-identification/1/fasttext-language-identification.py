@@ -44,8 +44,10 @@ class TritonPythonModel:
         -------
         List[pb_utils.InferenceResponse]
         """
-        responses = []
-        for request in requests:
+        responses = [None] * len(requests)
+        batch = []
+        batch_id_2_response_id = {}
+        for i, request in enumerate(requests):
             # Get INPUT_TEXT, this is a Triton Tensor
             # Using TritonError is a way to send any error messages back to the client
             try:
@@ -56,36 +58,43 @@ class TritonPythonModel:
                         f"{exc}", pb_utils.TritonError.INVALID_ARG
                     )
                 )
-                responses.append(response)
+                responses[i] = response
                 continue
-            # Convert to Python str
-            # Though config.pbtxt specifies datatype as TYPE_STRING when sending
-            # through a request it is BYTES. Thus must be decoded.
-            input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
-            # Replace newlines with ' '. FastText breaks on \n
-            input_text_cleaned = self.REMOVE_NEWLINE.sub(" ", input_text)
+            else:
+                # Convert to Python str
+                # Though config.pbtxt specifies datatype as TYPE_STRING when sending
+                # through a request it is BYTES. Thus must be decoded.
+                input_text = input_text_tt.as_numpy().reshape(-1)[0].decode("utf-8")
+                # Replace newlines with ' '. FastText breaks on \n
+                input_text_cleaned = self.REMOVE_NEWLINE.sub(" ", input_text)
+                batch_id_2_response_id[len(batch)] = i
+                batch.append(input_text_cleaned)
 
-            # Run through the model
-            try:
-                output_labels, _ = self.model.predict(input_text_cleaned, k=1)
-            except Exception as exc:
+        # Compute output for the all the requests at once
+        # NOTE: Be careful not to send one user's data back to all users in the batch
+        try:
+            output_labels, _ = self.model.predict(batch, k=1)
+        except Exception as exc:
+            for b_id, b in enumerate(batch):
                 response = pb_utils.InferenceResponse(
-                    error=pb_utils.TritonError(f"{exc}")
+                    error=pb_utils.TritonError(
+                        f"Error calling model.predict(batch, k=1). You sent {b}. "
+                        + "Try again, maybe some else caused error."
+                    )
                 )
-                responses.append(response)
-                continue
-            # Take just the first one because we used k = 1 in predict()
-            # Returns '__label__<lang_id>_<script>' but SeamlessM4T uses just lang_id
-            src_lang = output_labels[0].replace("__label__", "").split("_")[0]
+                responses[batch_id_2_response_id[b_id]] = response
+        else:
+            for b_id, output_label in enumerate(output_labels):
+                src_lang = output_label[0].replace("__label__", "").split("_")[0]
 
-            # Make Triton Inference Response
-            src_lang_tt = pb_utils.Tensor(
-                "SRC_LANG",
-                np.array([src_lang], dtype=self.output_dtype).reshape(-1, 1),
-            )
-            response = pb_utils.InferenceResponse(
-                output_tensors=[src_lang_tt],
-            )
-            responses.append(response)
+                # Make Triton Inference Response
+                src_lang_tt = pb_utils.Tensor(
+                    "SRC_LANG",
+                    np.array([src_lang], dtype=self.output_dtype).reshape(-1, 1),
+                )
+                response = pb_utils.InferenceResponse(
+                    output_tensors=[src_lang_tt],
+                )
+                responses[batch_id_2_response_id[b_id]] = response
 
         return responses
